@@ -1,19 +1,26 @@
-const nodemailer = require = require("nodemailer");
+const nodemailer = require("nodemailer");
+const { isSmtpConfigured } = require("../config/env");
 
-const sendEmail = async(mailOptions)=>{
-    let tranporter = nodemailer.createTransport({
-        host : process.env.SMTP_HOST,
-        port: process.env.SMTP_PORT,
-        auth : {
-            user:process.env.SMTP_USER,
-            pass:process.env.SMTP_PASS
-        }
-    });
+const sendEmail = async (mailOptions) => {
+  if (!isSmtpConfigured()) {
+    throw new Error("SMTP is not fully configured");
+  }
 
-    let info = await tranporter.sendMail(mailOptions);
-    console.log(`Message Send : ${info.messageId}`);
-}
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: Number(process.env.SMTP_PORT) === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const info = await transporter.sendMail(mailOptions);
+  console.log(`Message Send : ${info.messageId}`);
+  return info;
+};
 
 module.exports = {
-    sendEmail
-}
+  sendEmail,
+};

@@ -39,11 +39,12 @@ const QuestionSchema = new Schema({
   ]
 });
 QuestionSchema.pre("save", function (next) {
-    if (!this.isModified("title")){
-        next();
-    }
-    this.slug = this.makeSlug();
-    next();
+  if (!this.isModified("title")) {
+    return next();
+  }
+
+  this.slug = this.makeSlug();
+  next();
 });
 QuestionSchema.methods.makeSlug = function () {
   return slugify(this.title, {
@@ -52,4 +53,11 @@ QuestionSchema.methods.makeSlug = function () {
     lower: true,
   });
 };
+
+QuestionSchema.pre("remove", async function (next) {
+  const Answer = mongoose.model("Answer");
+  await Answer.deleteMany({ question: this._id });
+  next();
+});
+
 module.exports = mongoose.model("Question", QuestionSchema);

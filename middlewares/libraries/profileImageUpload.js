@@ -1,11 +1,15 @@
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
 const CustomError = require("../../helpers/error/CustomError");
 
 const storage = multer.diskStorage({
   destination: function (req, file, callback) {
     const rootDir = path.dirname(require.main.filename);
-    callback(null, path.join(rootDir, "public/uploads"));
+    const uploadPath = path.join(rootDir, "public/uploads");
+
+    fs.mkdirSync(uploadPath, { recursive: true });
+    callback(null, uploadPath);
   },
   filename: function (req, file, callback) {
     const extension = file.mimetype.split("/")[1];
@@ -25,7 +29,13 @@ const fileFilter = (req, file, callback) => {
   return callback(null, true);
 };
 
-const profileImageUpload = multer({ storage, fileFilter });
+const profileImageUpload = multer({
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 2 * 1024 * 1024,
+  },
+});
 
 module.exports = {
   profileImageUpload,

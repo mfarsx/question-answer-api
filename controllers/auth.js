@@ -7,15 +7,15 @@ const {
   comparePassword,
 } = require("../helpers/input/inputHelpers");
 const { sendEmail } = require("../helpers/libraries/sendEmail");
+const { isSmtpConfigured } = require("../helpers/config/env");
 
 const register = asyncErrorWrapper(async (req, res, next) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
 
   const user = await User.create({
     name,
     email,
     password,
-    role,
   });
 
   sendJwtToClient(user, res);
@@ -28,6 +28,10 @@ const login = asyncErrorWrapper(async (req, res, next) => {
   }
 
   const user = await User.findOne({ email }).select("+password");
+  if (!user) {
+    return next(new CustomError("Please check your inputs", 400));
+  }
+
   if (!comparePassword(password, user.password)) {
     return next(new CustomError("Please check your inputs", 400));
   }
@@ -40,10 +44,10 @@ const logout = asyncErrorWrapper(async (req, res, next) => {
 
   return res
     .status(200)
-    .cookie({
+    .clearCookie("access_token", {
       httpOnly: true,
-      expires: new Date(Date.now()),
-      secure: NODE_ENV === "development" ? false : true,
+      secure: NODE_ENV === "production",
+      sameSite: "lax",
     })
     .json({
       success: true,
@@ -54,7 +58,7 @@ const logout = asyncErrorWrapper(async (req, res, next) => {
 const getUser = (req, res, next) => {
   res.json({
     success: true,
-    message: {
+    data: {
       id: req.user.id,
       name: req.user.name,
       role: req.user.role,
@@ -88,9 +92,16 @@ const forgotPassword = asyncErrorWrapper(async (req, res, next) => {
     });
   }
   const resetPasswordToken = user.getResetPasswordTokenFromUser();
-  await user.save();
+  await user.save({ validateBeforeSave: false });
 
-  const resetPasswordUrl = `http://localhost500:/api/auth/resetpassword?resetPasswordToken=${user.resetPasswordToken}`;
+  if (!isSmtpConfigured()) {
+    return next(new CustomError("Password reset email is not configured", 503));
+  }
+
+  const resetBaseUrl =
+    process.env.RESET_PASSWORD_CLIENT_URL ||
+    `${req.protocol}://${req.get("host")}/api/auth/resetpassword`;
+  const resetPasswordUrl = `${resetBaseUrl}?resetPasswordToken=${resetPasswordToken}`;
 
   const emailTemplate = `
   <h3>Reset Your Password</h3>
@@ -111,15 +122,15 @@ const forgotPassword = asyncErrorWrapper(async (req, res, next) => {
     });
   } catch (err) {
     user.resetPasswordToken = undefined;
-    user.resetPasswordUrl = undefined;
-    await user.save();
+    user.resetPasswordExpire = undefined;
+    await user.save({ validateBeforeSave: false });
 
     return next(new CustomError("Email Could Not Be Sent", 500));
   }
 });
 
 const resetPassword = asyncErrorWrapper(async (req, res, next) => {
-  const { resetPasswordToken } = req.query;
+  const resetPasswordToken = req.body.resetPasswordToken || req.query.resetPasswordToken;
   const { password } = req.body;
 
   if (!resetPasswordToken) {
@@ -136,7 +147,7 @@ const resetPassword = asyncErrorWrapper(async (req, res, next) => {
 
   user.password = password;
   user.resetPasswordToken = undefined;
-  user.resetPassworExpire = undefined;
+  user.resetPasswordExpire = undefined;
 
   await user.save();
 
@@ -147,16 +158,24 @@ const resetPassword = asyncErrorWrapper(async (req, res, next) => {
 });
 
 const editDetails = asyncErrorWrapper(async (req, res, next) => {
-  const editInformation = req.body;
+  const allowedFields = ["name", "email", "title", "about", "place", "website"];
+  const editInformation = {};
+
+  allowedFields.forEach((field) => {
+    if (req.body[field] !== undefined) {
+      editInformation[field] = req.body[field];
+    }
+  });
 
   const user = await User.findByIdAndUpdate(req.user.id, editInformation, {
     new: true,
     runValidators: true,
   });
+
   return res.status(200).json({
-    success : true,
-    data : user
-  })
+    success: true,
+    data: user,
+  });
 });
 
 module.exports = {

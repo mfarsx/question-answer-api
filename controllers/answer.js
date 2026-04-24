@@ -21,6 +21,11 @@ const addNewAnswerToQuestion = asyncErrorWrapper(async (req, res, next) => {
 const getAllAnswersByQuestion = asyncErrorWrapper(async (req, res, next) => {
   const questionId = req.params.question_id;
   const question = await Question.findById(questionId).populate("answers");
+
+   if (!question) {
+    return next(new CustomError("There is no such question with that id", 400));
+  }
+
   const answers = question.answers;
 
   return res.status(200).json({

@@ -3,8 +3,8 @@ const asyncErrorWrapper = require("express-async-handler");
 const CustomError = require("../helpers/error/CustomError");
 
 const blockUser = asyncErrorWrapper(async (req, res, next) => {
-  req.user.blocked = !req.user.blocked;
-  await req.user.save();
+  req.foundUser.blocked = !req.foundUser.blocked;
+  await req.foundUser.save();
   
   return res.status(200).json({
     success: true,
@@ -13,7 +13,7 @@ const blockUser = asyncErrorWrapper(async (req, res, next) => {
 });
 
 const deleteUser = asyncErrorWrapper(async (req, res, next) => {
-  await req.user.remove();
+  await req.foundUser.remove();
   
   return res.status(200).json({
     success: true,

@@ -13,7 +13,7 @@ const UserSchema = new Schema({
   email: {
     type: String,
     required: [true, "Please provide a Email"],
-    unique: [true],
+    unique: true,
     match: [
       /^([\w-\.]+@([\w-]+\.)+[\w-]{2,4})?$/,
       "Please provide a valid email",
@@ -64,13 +64,19 @@ const UserSchema = new Schema({
 
 //UserSchema Methods
 UserSchema.methods.generateJwtFromUser = function () {
-  const { JWT_SCRET_KEY, JWT_EXPIRE } = process.env;
+  const { JWT_SECRET_KEY: jwtSecretKey, JWT_EXPIRE } = process.env;
+
+  if (!jwtSecretKey) {
+    throw new Error("JWT secret is not configured");
+  }
+
   const payload = {
     id: this._id,
     name: this.name,
     role: this.role,
   };
-  const token = jwt.sign(payload, JWT_SCRET_KEY, {
+  const token = jwt.sign(payload, jwtSecretKey, {
+    algorithm: "HS256",
     expiresIn: JWT_EXPIRE,
   });
   return token;
@@ -85,12 +91,13 @@ UserSchema.methods.getResetPasswordTokenFromUser = function () {
 
   this.resetPasswordToken = resetPasswordToken;
   this.resetPasswordExpire = Date.now() + parseInt(RESET_PASSWORD_EXPIRE);
+  return resetPasswordToken;
 };
 
 //Pre Hooks
 UserSchema.pre("save", function (next) {
   if (!this.isModified("password")) {
-    next();
+    return next();
   }
 
   bcrypt.genSalt(10, (err, salt) => {
@@ -103,9 +110,14 @@ UserSchema.pre("save", function (next) {
   });
 });
 UserSchema.post("remove", async function () {
-  await Question.deleteMany({
-    user: this._id,
-  });
+  const Answer = mongoose.model("Answer");
+  const questions = await Question.find({ user: this._id }).select("_id");
+  const questionIds = questions.map((question) => question._id);
+
+  if (questionIds.length > 0) {
+    await Answer.deleteMany({ question: { $in: questionIds } });
+    await Question.deleteMany({ _id: { $in: questionIds } });
+  }
 });
 
 module.exports = mongoose.model("User", UserSchema);

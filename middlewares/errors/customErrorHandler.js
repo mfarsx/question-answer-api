@@ -14,10 +14,13 @@ const customErrorHandlers = (err, req, res, next) => {
   if (err.name === "CastError") {
     customErr = new CustomError("Please provide a valid id", 400);
   }
+  if (err.name === "MulterError") {
+    customErr = new CustomError(err.message, 400);
+  }
 
   res.status(customErr.status || 500).json({
     success: false,
-    message: customErr.message,
+    message: customErr.message || "Internal Server Error",
   });
 };
 

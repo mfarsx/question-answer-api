@@ -31,11 +31,14 @@ const AnswerSchema = new Schema({
   },
 });
 AnswerSchema.pre("save", async function (next) {
-  if (!this.isModified("user")) return next();
+  if (!this.isNew) {
+    return next();
+  }
 
-  const question = await Question.findById(this.question);
-  question.answers.push(this._id);
-  await question.save();
+  await Question.findByIdAndUpdate(this.question, {
+    $push: { answers: this._id },
+  });
+
   next();
 });
 

@@ -15,10 +15,29 @@ const askNewQuestion = asyncErrorWrapper(async (req, res, next) => {
   });
 });
 
+const getPagination = (query) => {
+  const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(Number.parseInt(query.limit, 10) || 20, 1), 100);
+  const skip = (page - 1) * limit;
+
+  return { page, limit, skip };
+};
+
 const getAllQuestions = asyncErrorWrapper(async (req, res, next) => {
-  const questions = await Question.find();
+  const { page, limit, skip } = getPagination(req.query);
+  const [questions, total] = await Promise.all([
+    Question.find().sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Question.countDocuments(),
+  ]);
+
   return res.status(200).json({
     success: true,
+    meta: {
+      page,
+      limit,
+      total,
+      pages: Math.ceil(total / limit),
+    },
     data: questions,
   });
 });
@@ -57,14 +76,20 @@ const deleteQuestion = asyncErrorWrapper(async (req, res, next) => {
 });
 
 const likeUndoLikeQuestion = asyncErrorWrapper(async (req, res, next) => {
-  if (req.question.likes.includes(req.question.user.id.toString("hex"))) {
-    const index = req.question.likes.indexOf(req.user.id);
-    req.question.likes.splice(index, 1);
-    await req.question.save();
+  const userId = req.user.id;
+  const alreadyLiked = req.question.likes.some(
+    (like) => String(like) === userId
+  );
+
+  if (alreadyLiked) {
+    req.question.likes = req.question.likes.filter(
+      (like) => String(like) !== userId
+    );
   } else {
-    req.question.likes.push(req.question.user.id.toString("hex"));
-    await req.question.save();
+    req.question.likes.push(userId);
   }
+
+  await req.question.save();
 
   return res.status(200).json({
     success: true,
