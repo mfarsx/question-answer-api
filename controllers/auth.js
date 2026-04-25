@@ -85,18 +85,26 @@ const imageUpload = asyncErrorWrapper(async (req, res, next) => {
 const forgotPassword = asyncErrorWrapper(async (req, res, next) => {
   const resetEmail = req.body.email;
 
-  const user = await User.findOne({ email: resetEmail });
-  if (!user) {
-    return res.json({
+  if (!isSmtpConfigured()) {
+    return res.status(200).json({
       success: false,
+      message: "Password reset is currently unavailable",
     });
   }
+
+  const genericMessage = "If the email exists in our system, you will receive a reset link shortly.";
+
+  const user = await User.findOne({ email: resetEmail });
+
+  if (!user) {
+    return res.status(200).json({
+      success: true,
+      message: genericMessage,
+    });
+  }
+
   const resetPasswordToken = user.getResetPasswordTokenFromUser();
   await user.save({ validateBeforeSave: false });
-
-  if (!isSmtpConfigured()) {
-    return next(new CustomError("Password reset email is not configured", 503));
-  }
 
   const resetBaseUrl =
     process.env.RESET_PASSWORD_CLIENT_URL ||
@@ -115,18 +123,16 @@ const forgotPassword = asyncErrorWrapper(async (req, res, next) => {
       subject: "Reset Your Password",
       html: emailTemplate,
     });
-
-    return res.status(200).json({
-      success: true,
-      message: "Token Sent To Your Email",
-    });
   } catch (err) {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save({ validateBeforeSave: false });
-
-    return next(new CustomError("Email Could Not Be Sent", 500));
   }
+
+  return res.status(200).json({
+    success: true,
+    message: genericMessage,
+  });
 });
 
 const resetPassword = asyncErrorWrapper(async (req, res, next) => {
@@ -158,7 +164,8 @@ const resetPassword = asyncErrorWrapper(async (req, res, next) => {
 });
 
 const editDetails = asyncErrorWrapper(async (req, res, next) => {
-  const allowedFields = ["name", "email", "title", "about", "place", "website"];
+  // Email bu endpoint üzerinden değiştirilemez
+  const allowedFields = ["name", "title", "about", "place", "website"];
   const editInformation = {};
 
   allowedFields.forEach((field) => {

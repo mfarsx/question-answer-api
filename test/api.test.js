@@ -55,7 +55,7 @@ async function promoteToAdmin(email) {
   const user = await User.findOne({ email });
   user.role = 'admin';
   await user.save();
-  return login(user.email, user.password === user.password ? 'secret123' : 'secret123');
+  return login(user.email, 'secret123');
 }
 
 function authHeader(token) {
@@ -80,7 +80,7 @@ test.beforeEach(async () => {
   await clearDatabase();
 });
 
-// ── Health ──────────────────────────────────────────
+// ── Health ────────────────────────────────────────────
 
 test('GET /health returns ok', async () => {
   const res = await api.get('/health');
@@ -259,7 +259,7 @@ test('GET /api/users?page=1&limit=1 returns pagination meta', async () => {
 
 // ── Password reset flow ────────────────────────────
 
-test('forgot password returns 503 with placeholder SMTP', async () => {
+test('forgot password: no reset token written when SMTP not configured', async () => {
   await api.post('/api/auth/register').send({
     name: 'forgot user',
     email: 'forgot@example.com',
@@ -268,8 +268,35 @@ test('forgot password returns 503 with placeholder SMTP', async () => {
   const res = await api.post('/api/auth/forgotpassword').send({
     email: 'forgot@example.com',
   });
-  assert.equal(res.status, 503);
-  assert.equal(res.body.message, 'Password reset email is not configured');
+  assert.equal(res.status, 200);
+  assert.ok(res.body.message);
+  assert.ok(res.body.message.includes('unavailable'));
+
+  // SMTP yoksa DB'ye reset token yazılmamalı
+  const user = await User.findOne({ email: 'forgot@example.com' });
+  assert.equal(user.resetPasswordToken, undefined);
+  assert.equal(user.resetPasswordExpire, undefined);
+});
+
+test('forgot password enumeration-safe: same response for existing and missing email', async () => {
+  const existingEmail = 'enum-existing@example.com';
+  await api.post('/api/auth/register').send({
+    name: 'enum user',
+    email: existingEmail,
+    password: 'secret123',
+  });
+
+  const existingRes = await api.post('/api/auth/forgotpassword').send({ email: existingEmail });
+  assert.equal(existingRes.status, 200);
+
+  const missingRes = await api.post('/api/auth/forgotpassword').send({
+    email: 'nonexistent-enum@example.com',
+  });
+  assert.equal(missingRes.status, 200);
+
+  // Aynı response body → enumeration mümkün değil
+  assert.equal(existingRes.body.success, missingRes.body.success);
+  assert.equal(existingRes.body.message, missingRes.body.message);
 });
 
 test('reset password requires token', async () => {
@@ -407,4 +434,32 @@ test('GET /api/users/:id rejects invalid ObjectId', async () => {
   const res = await api.get('/api/users/not-an-id');
   assert.equal(res.status, 400);
   assert.ok(res.body.message?.includes('valid id'));
+});
+
+// ── editDetails: email blocked ──────────────────────
+
+test('editDetails rejects email field', async () => {
+  const user = await register();
+  const res = await api.put('/api/auth/edit').set(authHeader(user.token)).send({
+    name: 'new name',
+    email: 'hacked@example.com',
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.name, 'new name');
+  assert.equal(res.body.data.email, user.email);
+});
+
+test('editDetails allows safe fields', async () => {
+  const user = await register();
+  const res = await api.put('/api/auth/edit').set(authHeader(user.token)).send({
+    title: 'Engineer',
+    about: 'Full-stack dev',
+    place: 'Istanbul',
+    website: 'https://example.com',
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.data.title, 'Engineer');
+  assert.equal(res.body.data.about, 'Full-stack dev');
+  assert.equal(res.body.data.place, 'Istanbul');
+  assert.equal(res.body.data.website, 'https://example.com');
 });
